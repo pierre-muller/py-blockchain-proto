@@ -22,7 +22,7 @@ class Client(object):
 
 
 		def registerPeer(self, peer):
-			if peer != self.port and peer not in self.peers:
+			if (peer != self.port) and (peer not in self.peers):
 				self.peers.append(peer)
 
 	instance = None
@@ -47,11 +47,14 @@ class ClientEndpoint(Resource):
 		return Client().instance, 200
 
 
-@ns_client.route('/registerPeer')
+@ns_client.route('/registerPeer/')
 class RegisterPeer(Resource):
 
 	@api.expect(registerPeer_args)
 	def post(self):
 		args = registerPeer_args.parse_args()
+
 		Client.instance.registerPeer(args['peer'])
-		return "Registered peer: {}".format(args['peer']), 201
+
+
+		return "Registered peer: {} ".format(args['peer']), 201

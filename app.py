@@ -14,6 +14,8 @@ from app.restplus import api
 from app.blockchain import ns_blockchain
 from app.client import ns_client, Client
 
+import requests
+
 
 
 app = Flask(__name__)
@@ -28,7 +30,7 @@ def configure_app(flask_app, port):
     flask_app.config['ERROR_404_HELP'] = settings.RESTPLUS_ERROR_404_HELP
 
 
-def initialize_app(flask_app, port, name, peer):
+def initialize_app(flask_app, port, name, peers, honest):
     configure_app(flask_app, port)
 
     blueprint = Blueprint('api', __name__, url_prefix='/api')
@@ -40,15 +42,26 @@ def initialize_app(flask_app, port, name, peer):
     ## Initialize client
     Client()
     Client.instance.port = port
+    print(Client.instance.port)
     Client.instance.name = name
-    Client.instance.registerPeer(peer)
+    Client.instance.honest = honest
+    for peer in peers.split(','):
+        Client.instance.registerPeer(int(peer))
+    #notify peer of own existence
+    print (Client.instance.peers)
+    for peer in Client.instance.peers:
+        if peer != port:
+            url = "http://localhost:{}/api/client/registerPeer/?peer={}".format(peer, port)
+            print("registering myself to peer: {}".format(url))
+            requests.post(url)
+
 
     api.title = "{} - {}".format(name, api.title)
 
 
 
 def help():
-    print("usage: [port] [name] [peer] [honest|dishonest]")
+    print("usage: [port] [name] [peer1,peer2[,...]] [honest|dishonest|h|d]")
     exit()
 
 def main():
@@ -58,10 +71,10 @@ def main():
         help()
     port = int(sys.argv[1])
     name = sys.argv[2]
-    peer = int(sys.argv[3])
+    peers = sys.argv[3]
     honest = (sys.argv[4] in ['h','honest'])
 
-    initialize_app(app, port, name, peer)
+    initialize_app(app, port, name, peers, honest)
     log.info('>>>>> Starting development server at http://{}:{}/api/ <<<<<'.format(app.config['SERVER_NAME'], port))
     app.run(debug=settings.FLASK_DEBUG, port=port)
 
