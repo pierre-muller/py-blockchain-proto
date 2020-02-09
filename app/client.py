@@ -2,8 +2,16 @@ from app.restplus import api
 
 #from app.blockchain import Blockchain
 from flask_restplus import Resource, marshal_with, marshal
-from app.serializers import client
+from app.serializers import client, blockList, block
 from app.parsers import registerPeer_args
+
+import requests
+import sys
+
+import logging
+
+import json
+
 
 
 
@@ -19,11 +27,24 @@ class Client(object):
 			self.peers = []
 			from app.blockchain import Blockchain
 			self.blockchain = Blockchain()
+			self.rejectedBlocks = []
 
 
 		def registerPeer(self, peer):
 			if (peer != self.port) and (peer not in self.peers):
 				self.peers.append(peer)
+
+		def propagateBlockToPeers(self, newBlock):
+			from app.blockchain import Block
+			logging.debug("Propagating block: {}".format(marshal(newBlock, block)))
+			for peer in self.peers:
+				url="http://localhost:{}/api/client/blockchain/acceptBlock/".format(peer)
+				logging.debug("propagating block to peers, peer: {} block: {}".format(peer, json.dumps(marshal(newBlock, block))))
+				ret = requests.post(url, json=json.dumps(marshal(newBlock, block)))
+				logging.debug('response: {}'.format(ret.status_code))
+
+
+
 
 	instance = None
 
@@ -36,6 +57,8 @@ class Client(object):
 
 	def __setattr__(self, name):
 		return setattr(self.instance, name)
+
+
 
 
 
@@ -58,3 +81,11 @@ class RegisterPeer(Resource):
 
 
 		return "Registered peer: {} ".format(args['peer']), 201
+
+@ns_client.route('/rejectedBlocks/')
+class getRejectedBlocks(Resource):
+
+	@api.marshal_with(blockList)
+	def get(self):
+		return Client.instance.rejectedBlocks
+

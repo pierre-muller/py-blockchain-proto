@@ -22,6 +22,12 @@ blockchain = api.model('Blockchain', {
     'blocks' : fields.List(fields.Nested(block), required=True)
     })
 
+blockList = api.model('List of blocks', {
+    'blocks' : fields.List(fields.Nested(block), required=True)
+    })
+
+
+
 accountBalance = api.model('AccountBalance', {
     'name': fields.String(required=True),
     'balance' : fields.Float(required=True)

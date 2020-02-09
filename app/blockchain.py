@@ -1,11 +1,17 @@
-from app.restplus import api
-from app.serializers import blockchain, balances
-from app.parsers import transaction_arguments
+
 from flask_restplus import Resource, marshal_with, marshal
-from app.client import Client
+
 import hashlib
+from flask import request
 
 import json
+
+from app.restplus import api
+from app.serializers import blockchain, balances, block
+from app.parsers import transaction_arguments
+from app.client import Client
+
+import logging
 
 ns_blockchain = api.namespace('blockchain', description='Operations related to the blockchain')
 
@@ -48,14 +54,16 @@ class Block(object):
 			#print("{} {}".format(self.nounce, hashlib.md5(self.toJson().encode()).hexdigest()))
 			self.nounce += 1
 		self.ownHash = hashlib.md5(self.toJson().encode()).hexdigest()
-		print("found nounce: {} giving hash value: {}".format(self.nounce, self.ownHash))
+		logging.info("found nounce: {} giving hash value: {}".format(self.nounce, self.ownHash))
 		
 
 	def toJson(self):
 		buf=json.dumps([ob.__dict__ for ob in self.transactions])
 		buf='{"prevHash":"' + self.prevHash + '", "nounce":"' + str(self.nounce) + '","index":"' + str(self.index) + '", "transactions":' + buf + '}'
 		return buf
-		
+	
+	def computeHash(self):
+		return  hashlib.md5(self.toJson().encode()).hexdigest()
 
 
 
@@ -83,13 +91,11 @@ class Blockchain(object):
 		block.mine()
 		self.blocks.append(block)
 
-	def addTransaction(self, fromAccount, toAccount, amount):
+	def createNewBlock(self):
 	
 		prevBlock = self.blocks[-1]
 		block = Block(prevBlock.index + 1, prevBlock.ownHash)
-		block.addTransaction(fromAccount, toAccount, amount)
-		block.mine()
-		self.blocks.append(block)
+		return block
 
 	def getBalances(self):
 		balances = {}
@@ -107,6 +113,31 @@ class Blockchain(object):
 					balances[transaction.fromAccount] -= transaction.amount
 					balances[transaction.toAccount] += transaction.amount
 		return balances
+
+	def isValid(self):
+		#check genesis block
+		balances = {}
+		genesisBlock = self.blocks[0]
+		#TODO check balances
+		if genesisBlock.prevHash != 'genesis' and genesisBlock.index != 0:
+			logging.debug("blockchain isValid(): invalid genesis")
+			return False 
+		if genesisBlock.computeHash() != genesisBlock.ownHash:
+			logging.debug("blockchain isValid(): invalid genesis")
+			return False
+
+		currentIndex = 0
+		previousHash = genesisBlock.ownHash
+		for block in self.blocks[1:]:
+			currentIndex+=1
+			if ((block.index != currentIndex)
+				or (block.prevHash != previousHash)):
+				logging.debug("blockchain isValid(): link error")
+				return False
+			previousHash = block.ownHash
+
+		return True
+
 
 
 @ns_blockchain.route('/')
@@ -129,17 +160,48 @@ class balances(Resource):
 		return acc, 200
 
 
-@ns_blockchain.route('/sendTransaction')
+@ns_blockchain.route('/sendTransaction/')
 class sendTransaction(Resource):
 
 	@api.expect(transaction_arguments)
 	def post(self):
 
 		args = transaction_arguments.parse_args()
-		balances = appBlockhain.getBalances()
-		if args['fromAccount'] not in balances or balances[args['fromAccount']] < args['amount']:
+		balances = Client.instance.blockchain.getBalances()
+		if (args['fromAccount'] not in balances or balances[args['fromAccount']] < args['amount']):
 			return "Insufficient funds", 403
 
-		Client.instance.blockchain.addTransaction(args['fromAccount'], args['toAccount'], args['amount'])
+		newBlock = Client.instance.blockchain.createNewBlock()
+		newBlock.addTransaction(args['fromAccount'], args['toAccount'], args['amount'])
+		newBlock.mine()
+		Client.instance.blockchain.blocks.append(newBlock)
+		if not Client.instance.blockchain.isValid():
+			Client.instance.blockchain.blocks.pop()
+			return "Insufficient funds", 403
+
+		# forward new block to peers
+		Client.instance.propagateBlockToPeers(newBlock)
+
 
 		return "Done", 201
+
+@ns_blockchain.route('/acceptBlock/')
+class acceptBlock(Resource):
+	@api.expect(block)
+	def post(self):
+		newBlock = Block(request.json['index'], request.json['prevHash'])
+		newBlock.ownHash = request.json['ownHash']
+		newBlock.nounce = request.json['nounce']
+		if 'transactions' in request.json:
+			for transaction in request.json['transactions']:
+				newBlock.addTransaction(transaction['fromAccount'], transaction['toAccount'], transaction['amount'])
+
+		Client.instance.blockchain.blocks.append(newBlock)
+
+		if Client.instance.blockchain.isValid():
+			return "Accepted", 201
+
+		else:
+			Client.instance.blockchain.blocks.pop()
+			Client.instance.rejectedBlocks.append(newBlock)
+			return "Rejected", 403

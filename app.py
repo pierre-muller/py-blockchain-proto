@@ -39,24 +39,35 @@ def initialize_app(flask_app, port, name, peers, honest):
     api.add_namespace(ns_client)
     flask_app.register_blueprint(blueprint)
 
+    # Logging
+
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+
+    logging.basicConfig(filename='logs/log_node_{}.log'.format(port),level=logging.DEBUG, filemode='w')
+
     ## Initialize client
     Client()
     Client.instance.port = port
-    print(Client.instance.port)
+    #print(Client.instance.port)
     Client.instance.name = name
     Client.instance.honest = honest
     for peer in peers.split(','):
         Client.instance.registerPeer(int(peer))
-    #notify peer of own existence
-    print (Client.instance.peers)
+
+    logging.info("Created client {} {} {}".format(port, name, honest))
+    #notify peers of own existence
+    #print (Client.instance.peers)
     for peer in Client.instance.peers:
         if peer != port:
             url = "http://localhost:{}/api/client/registerPeer/?peer={}".format(peer, port)
-            print("registering myself to peer: {}".format(url))
+            logging.info("registering myself to peer: {}".format(url))
             requests.post(url)
 
 
     api.title = "{} - {}".format(name, api.title)
+
+
 
 
 
