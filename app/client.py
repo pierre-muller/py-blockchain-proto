@@ -38,9 +38,10 @@ class Client(object):
 			from app.blockchain import Block
 			logging.debug("Propagating block: {}".format(marshal(newBlock, block)))
 			for peer in self.peers:
-				url="http://localhost:{}/api/client/blockchain/acceptBlock/".format(peer)
+				url="http://localhost:{}/api/blockchain/acceptBlock/".format(peer)
 				logging.debug("propagating block to peers, peer: {} block: {}".format(peer, json.dumps(marshal(newBlock, block))))
-				ret = requests.post(url, json=json.dumps(marshal(newBlock, block)))
+				headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
+				ret = requests.post(url, data=json.dumps(marshal(newBlock, block)), headers=headers)
 				logging.debug('response: {}'.format(ret.status_code))
 
 
@@ -85,7 +86,7 @@ class RegisterPeer(Resource):
 @ns_client.route('/rejectedBlocks/')
 class getRejectedBlocks(Resource):
 
-	@api.marshal_with(blockList)
+	@api.marshal_with(block)
 	def get(self):
-		return Client.instance.rejectedBlocks
+		return Client.instance.rejectedBlocks, 200
 

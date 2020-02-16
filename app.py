@@ -44,7 +44,8 @@ def initialize_app(flask_app, port, name, peers, honest):
     if not os.path.exists('logs'):
         os.mkdir('logs')
 
-    logging.basicConfig(filename='logs/log_node_{}.log'.format(port),level=logging.DEBUG, filemode='w')
+    logging.basicConfig(filename='logs/log_node_{}.log'.format(port),level=logging.DEBUG, filemode='w', format='%(asctime)s %(levelname)-8s %(message)s')
+
 
     ## Initialize client
     Client()
