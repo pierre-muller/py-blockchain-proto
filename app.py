@@ -11,8 +11,8 @@ import sys
 import settings
 from app.restplus import api
 
-from app.blockchain import ns_blockchain
-from app.client import ns_client, Client
+from app.node import  Node
+from app.endpoints import ns_operations
 
 import requests
 
@@ -35,8 +35,7 @@ def initialize_app(flask_app, port, name, peers, honest):
 
     blueprint = Blueprint('api', __name__, url_prefix='/api')
     api.init_app(blueprint)
-    api.add_namespace(ns_blockchain)
-    api.add_namespace(ns_client)
+    api.add_namespace(ns_operations)
     flask_app.register_blueprint(blueprint)
 
     # Logging
@@ -48,20 +47,20 @@ def initialize_app(flask_app, port, name, peers, honest):
 
 
     ## Initialize client
-    Client()
-    Client.instance.port = port
-    #print(Client.instance.port)
-    Client.instance.name = name
-    Client.instance.honest = honest
+    Node()
+    Node.instance.port = port
+    #print(Node.instance.port)
+    Node.instance.name = name
+    Node.instance.honest = honest
     for peer in peers.split(','):
-        Client.instance.registerPeer(int(peer))
+        Node.instance.registerPeer(int(peer))
 
     logging.info("Created client {} {} {}".format(port, name, honest))
     #notify peers of own existence
-    #print (Client.instance.peers)
-    for peer in Client.instance.peers:
+    #print (Node.instance.peers)
+    for peer in Node.instance.peers:
         if peer != port:
-            url = "http://localhost:{}/api/client/registerPeer/?peer={}".format(peer, port)
+            url = "http://localhost:{}/api/registerPeer/?peer={}".format(peer, port)
             logging.info("registering myself to peer: {}".format(url))
             requests.post(url)
 

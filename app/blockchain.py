@@ -9,12 +9,9 @@ import json
 from app.restplus import api
 from app.serializers import blockchain, balances, block
 from app.parsers import transaction_arguments
-from app.client import Client
+from app.node import Node
 
 import logging
-
-ns_blockchain = api.namespace('blockchain', description='Operations related to the blockchain')
-
 
 
 class Transaction(object):
@@ -114,117 +111,89 @@ class Blockchain(object):
 					balances[transaction.toAccount] += transaction.amount
 		return balances
 
-	""" in this implementation, only one block at a time is added to the blockchain
-	to validate the chain, we can therefore consider the chain minus its last block to be
-	valid.
-	hence, the following checks are sufficient:
-	 - balances are >=0
-	 - chaining conditions of last block are valid (index and prevhash)
-	 - hash of last block
-	"""
-	def isValid(self):
-		#check balances
-		balances = self.getBalances()
-		for b in balances:
-			if balances[b] < 0:
-				logging.debug("blockchain isValid(): invalid balance for {}".format(balances[b]))
-				return False
 
+	
+	def isValid(self, prevBalances={}, fullCheck = True):
 		if not self.blocks:
 			logging.debug("blockchain isValid(): empty chain is valid")
-			return True
+			return True, {}
+
+		"""
+		if not prevBalances:
+			lastNode = self.blocks.pop()
+			prevBalances = self.getBalances()
+			self.blocks.append(lastNode)
+		"""
 
 		if len(self.blocks) == 1:
 			if (self.blocks[0].prevHash == 'genesis'
 				and self.blocks[0].computeHash() == self.blocks[0].ownHash):
-				return True
+				balances = {}
+				for transaction in self.blocks[0].transactions:
+					if transaction.toAccount not in balances:
+						balances[transaction.toAccount] = 0.0
+					balances[transaction.toAccount] += transaction.amount
+				return True, balances
 			else:
 				logging.debug("blockchain isValid(): invalid genesis block")
-				return False
+				return False, {}
+
+		lastBlock = self.blocks.pop()
+		if fullCheck :
+			prevValid, prevBalances = self.isValid()
+		else:
+			prevValid = True
+		self.blocks.append(lastBlock)
+		
+
+
+		if not prevValid:
+			logging.debug("blockchain isValid(): invalid block at index: {}".format(lastBlock.index-1))
+			return False, {}
+
+
+		#check balances
+		balances = prevBalances
+		for transaction in self.blocks[-1].transactions:
+			if transaction.toAccount not in balances:
+				balances[transaction.toAccount] = 0.0
+			if transaction.fromAccount not in balances:
+				balances[transaction.fromAccount] = 0.0
+			balances[transaction.fromAccount] -= transaction.amount
+			balances[transaction.toAccount] += transaction.amount
+
+		for b in balances:
+			if balances[b] < 0:
+				logging.debug("blockchain isValid(): invalid balance for {} in block at index {}.".format(b, lastBlock.index))
+				return False, {}
 
 
 		if (self.blocks[-2].ownHash != self.blocks[-1].prevHash
 				or self.blocks[-2].index != self.blocks[-1].index -1 ):
 			logging.debug("blockchain isValid(): invalid chain linkage on last block")
-			return False
+			return False, {}
 
 		if (self.blocks[-1].computeHash() != self.blocks[-1].ownHash):
 			logging.debug("blockchain isValid(): invalid hash on last block")
-			return False
+			return False, {}
 
-		return True
-
-
-
-@ns_blockchain.route('/')
-class BlockchainEndpoint(Resource):
+		return True, balances
 
 
-	@api.marshal_with(blockchain)
-	def get(self):
-		return Client.instance.blockchain, 200
 
-@ns_blockchain.route('/balances')
-class balances(Resource):
-
-	@api.marshal_with(balances)
-	def get(self):
-		bal = Client.instance.blockchain.getBalances()
-		acc = Accounts()
-		for name in bal:
-			acc.accounts.append(Account(name, bal[name]))
-		return acc, 200
+	def isFullChainValid(self):
+		return self.isValid()[0]
 
 
-@ns_blockchain.route('/sendTransaction/')
-class sendTransaction(Resource):
+	"""
+	when adding one block to the chain, no need to check the full chain is valid
+	as we know it was valid before the addition
+	"""
+	def isLastBlockValid(self):
+		lastBlock = self.blocks.pop()
+		prevBalances = self.getBalances()
+		self.blocks.append(lastBlock)
+		
+		return self.isValid(prevBalances, False)[0]
+	
 
-	@api.expect(transaction_arguments)
-	def post(self):
-
-		args = transaction_arguments.parse_args()
-		balances = Client.instance.blockchain.getBalances()
-		if (args['fromAccount'] not in balances or balances[args['fromAccount']] < args['amount']) and Client.instance.honest:
-			return "Insufficient funds", 403
-
-		newBlock = Client.instance.blockchain.createNewBlock()
-		newBlock.addTransaction(args['fromAccount'], args['toAccount'], args['amount'])
-		newBlock.mine()
-		Client.instance.blockchain.blocks.append(newBlock)
-		if not Client.instance.blockchain.isValid() and Client.instance.honest:
-			Client.instance.blockchain.blocks.pop()
-			return "Insufficient funds", 403
-
-		# forward new block to peers
-		Client.instance.propagateBlockToPeers(newBlock)
-
-
-		return "Done", 201
-
-
-@ns_blockchain.route('/acceptBlock/')
-class acceptBlock(Resource):
-	@api.expect(block)
-	def post(self):
-		try:
-			newBlock = Block(request.json['index'], request.json['prevHash'])
-			newBlock.ownHash = request.json['ownHash']
-			newBlock.nounce = request.json['nounce']
-			if 'transactions' in request.json:
-				for transaction in request.json['transactions']:
-					newBlock.addTransaction(transaction['fromAccount'], transaction['toAccount'], transaction['amount'])
-
-			Client.instance.blockchain.blocks.append(newBlock)
-
-			logging.debug("Try accepting block")
-			logging.debug(Client.instance.blockchain.getBalances())
-			if Client.instance.blockchain.isValid():
-				return "Accepted", 201
-
-			else:
-				Client.instance.blockchain.blocks.pop()
-				Client.instance.rejectedBlocks.append(newBlock)
-				return "Rejected", 403
-		except e:
-			logging.exception("Unexpected error")
-			return "Unexpected error", 500

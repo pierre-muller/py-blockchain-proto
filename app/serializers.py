@@ -38,7 +38,7 @@ balances = api.model('Balances', {
     })
 
 
-client = api.model('Client', {
+node = api.model('Node', {
     'name' : fields.String(required=True),
     'port' : fields.Integer(required=True),
     'honest' : fields.Boolean(required=True),

@@ -2,8 +2,8 @@ from app.restplus import api
 
 #from app.blockchain import Blockchain
 from flask_restplus import Resource, marshal_with, marshal
-from app.serializers import client, blockList, block
 from app.parsers import registerPeer_args
+from app.serializers import block
 
 import requests
 import sys
@@ -14,11 +14,8 @@ import json
 
 
 
-
-ns_client = api.namespace('client', description='Operations related to the client')
-
-class Client(object):
-	class __Client(object):
+class Node(object):
+	class __Node(object):
 		port = 8888
 		name = ""
 		honest = True
@@ -38,7 +35,7 @@ class Client(object):
 			from app.blockchain import Block
 			logging.debug("Propagating block: {}".format(marshal(newBlock, block)))
 			for peer in self.peers:
-				url="http://localhost:{}/api/blockchain/acceptBlock/".format(peer)
+				url="http://localhost:{}/api/acceptBlock/".format(peer)
 				logging.debug("propagating block to peers, peer: {} block: {}".format(peer, json.dumps(marshal(newBlock, block))))
 				headers = {'Content-type': 'application/json', 'Accept': 'application/json'}
 				ret = requests.post(url, data=json.dumps(marshal(newBlock, block)), headers=headers)
@@ -50,8 +47,8 @@ class Client(object):
 	instance = None
 
 	def __init__(self):
-		if not Client.instance:
-			Client.instance = Client.__Client()
+		if not Node.instance:
+			Node.instance = Node.__Node()
 	
 	def __getattr__(self, name):
 		return getattr(self.instance, name)
@@ -60,33 +57,4 @@ class Client(object):
 		return setattr(self.instance, name)
 
 
-
-
-
-@ns_client.route('/')
-class ClientEndpoint(Resource):
-
-	@api.marshal_with(client)
-	def get(self):
-		return Client().instance, 200
-
-
-@ns_client.route('/registerPeer/')
-class RegisterPeer(Resource):
-
-	@api.expect(registerPeer_args)
-	def post(self):
-		args = registerPeer_args.parse_args()
-
-		Client.instance.registerPeer(args['peer'])
-
-
-		return "Registered peer: {} ".format(args['peer']), 201
-
-@ns_client.route('/rejectedBlocks/')
-class getRejectedBlocks(Resource):
-
-	@api.marshal_with(block)
-	def get(self):
-		return Client.instance.rejectedBlocks, 200
 
