@@ -87,7 +87,7 @@ class Blockchain(object):
 	def __init__(self):
 		self.blocks=[]
 		block = Block(0, "genesis")
-		block.addTransaction("pierre","pierre",1000)
+		block.addTransaction("alice","alice",1000)
 		block.mine()
 		self.blocks.append(block)
 
